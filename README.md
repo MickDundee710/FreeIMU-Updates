@@ -1,8 +1,81 @@
-FreeIMU-Updates
+﻿FreeIMU-Updates
 ===============
 
 Change Log
-Wednesday, March 29, 2016
+Wednesday April 26, 2017
+
+04-26-2017 Updated usage of Wire.endTransmission after Wire.requestFrom
+
+04-21-2017 Corrected Wire.setClock call in MPU60X0.cpp.
+
+04-09-2017 Added Master Mode Support using elements from Brian Taylor's MPU9250 libray.  Master Mode allows
+           support for two MPU9250's on same I2C bus using its capability to have two different addresses.
+		   Usage:
+		   Establish two instances of the library:
+			1. Set the FreeIMU objects
+				FreeIMU my3IMU0 = FreeIMU();
+				FreeIMU my2IMU1 = FreeIMU();
+			
+			2. in the setup initialize the 9250s with the correct addresses
+				my3IMU0.init(0x68, true);
+				my3IMY1.init(0x69, true);
+			
+			3.When you raw data you will need to make sure you identify the data to the correct IMU object:
+				my3IMU0.getRawValues(raw_values0);
+				my3IMU1.getRawValues(raw_values1);
+				
+			4. You will need of course to do the same for calibrated values;
+				m3IMU0.getValues(q, val);
+				m3IMU1.getValues(q, val);
+
+
+03-11-2016 Added new Processing GUI based on Multiwii GUI.  Hope I am not violating any licenses.  If I am please
+           let me know.  To use go to setup select whether you have a GPS attached and set any values you want.
+           Click on START button to connect and switch to the FreeIMU tab.
+
+--------------------------------------------------------
+
+03-05-2017 Added a FreeIMU_serial_2.ino sketch that will send continuous data to the Processing GUI.  All other functions
+		   functions remain the same.
+           Added a new Processing Gui v6 that works with the serial_2 sketch
+           Additional functions available in serial_2 sketch as well as serial sketch:
+           'y' - prints only yaw, pitch and roll values
+           'j' - prints out calibrated values
+
+--------------------------------------------------------
+
+03-02-2017 Added three sketches that can support WiFi  One is for the ESP8266, the second for the ESP32 and the third
+		   third for the Microduino Wifi(ESP) module.  The 8266 sketch was tested on the LinkNode D1, the 32 sketch on
+		   a ESP32 dev board from Onehorse on Tindie.  There are also two processing sketches that you can use
+		   with the WiFi in the Processing directory.  To use you will need to install the ESP8266 Arduino library or 
+		   the Arduino ESP32 libraries on Github.  They give you detailed instructions on installation.  For the Microduino
+		   ESP module I included a copy of the Arduino WiFiEsp library.  
+		   --- For the Microduino you will need to download and flash it with 1.3 AT firmware: 
+		   http://www.electrodragon.com/w/ESP8266_AT-Command_firmware
+		   I included a copy in the extras folder,
+		   --- The WiFiEsp library is at (for ref): https://github.com/bportaluri/WiFiEsp
+
+		
+--------------------------------------------------------		
+
+12-09-16 Made the Magnetic Disturbance algorithm optional.  If you want to enable uncomment the following line in the FreeIMU.h file:
+>#define DISABLE_MAGJAM  // Uncomment this line to disable the magnetic disturbance
+
+--------------------------------------------------------
+
+12-08-16 Added a magnectic disturbance algorithm that will detect presence of strong magnetic fields.  Algorithm is based on discussion at https://forum.pjrc.com/threads/33902-Prop-Shield-NXPSensorFusion-observations
+		 References:
+		 Accurate Orientation Estimation Using AHRS under Conditions of Magnetic Distortion
+		 http://www.mdpi.com/1424-8220/14/11/20008
+		 and Unscented Kalman filter and Magnetic Angular Rate Update (MARU) for an improved 
+		 Pedestrian Dead-Reckoning,
+		 https://www.researchgate.net/publication/235634565_Unscented_Kalman_filter_and_Magnetic_Angular_Rate_Update_MARU_for_an_improved_Pedestrian_Dead-Reckoning?enrichId=rgreq-3005504c-ee49-416d-9a75-95eca90fb5e5&enrichSource=Y292ZXJQYWdlOzIzNTYzNDU2NTtBUzoxMDIyMTAxMjU5NTkxNzRAMTQwMTM4MDIwMTQ5Ng%3D%3D&el=1_x_2
+
+		 ----------------------------------------------------------------------------
+		 
+12-08-16 Updated code where necessary for updated Pololu libraries.
+
+----------------------------------------------------------------------------
 
 03-29-16
 Added support for the LSM9DS1 IMU using the Sparkfun Library.

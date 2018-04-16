@@ -286,7 +286,19 @@ GNU General Public License for more details.
 ----------------------------------------------------------------------------
 03-29-16 Added support for the LSM9DS1 IMU with and without a co MS5611
 ----------------------------------------------------------------------------
+12-08-16 Added a magnectic disturbance algorithm that will detect presence of strong magnetic
+		 fields.  Algorithm is based on discussion at 
+		 https://forum.pjrc.com/threads/33902-Prop-Shield-NXPSensorFusion-observations
+		 References:
+		 Accurate Orientation Estimation Using AHRS under Conditions of Magnetic Distortion
+		 http://www.mdpi.com/1424-8220/14/11/20008
+		 and Unscented Kalman filter and Magnetic Angular Rate Update (MARU) for an improved 
+		 Pedestrian Dead-Reckoning,
+		 https://www.researchgate.net/publication/235634565_Unscented_Kalman_filter_and_Magnetic_Angular_Rate_Update_MARU_for_an_improved_Pedestrian_Dead-Reckoning?enrichId=rgreq-3005504c-ee49-416d-9a75-95eca90fb5e5&enrichSource=Y292ZXJQYWdlOzIzNTYzNDU2NTtBUzoxMDIyMTAxMjU5NTkxNzRAMTQwMTM4MDIwMTQ5Ng%3D%3D&el=1_x_2
+----------------------------------------------------------------------------
+12-08-16 Updated code where necessary for updated Pololu libraries.
 
+----------------------------------------------------------------------------
 */
 
 #include "Arduino.h"
@@ -370,6 +382,7 @@ uint8_t num_gyros = 1;
 uint8_t INS_MAX_INSTANCES = 2;
 
 #define M_PI 3.14159265359
+#define rad2degs 57.295779513082320876798154814105
 
 FreeIMU::FreeIMU() {
 
@@ -405,7 +418,7 @@ FreeIMU::FreeIMU() {
     maghead = iCompass(MAG_DEC, WINDOW_SIZE, SAMPLE_SIZE);
   #elif HAS_MPU9250()
     accgyro = MPU60X0();
-    mag = AK8963();
+    //mag = AK8963();
     maghead = iCompass(MAG_DEC, WINDOW_SIZE, SAMPLE_SIZE);
   #elif HAS_LSM9DS0()
     //lsm = LSM9DS0(MODE_I2C, LSM9DS0_G, LSM9DS0_XM);
@@ -625,6 +638,8 @@ void FreeIMU::RESET_Q() {
 	 if(fastmode) { // switch to 400KHz I2C - eheheh
       TWBR = ((F_CPU / 400000L) - 16) / 2; 
     }
+  #else
+	Wire.setClock(400000);
   #endif
 
  
@@ -681,14 +696,8 @@ void FreeIMU::RESET_Q() {
   #elif HAS_MPU9150()
     //initialize accelerometer and gyroscope
     accgyro = MPU60X0(false, accgyro_addr);
-    #if HAS_MPU9250()
-	    accgyro.initialize9250();
-	    accgyro.setDLPFMode(MPU60X0_DLPF_BW_98);
-	#else
-	  accgyro.initialize();
-	  accgyro.setDLPFMode(MPU60X0_DLPF_BW_20);
-	#endif
-	
+	accgyro.initialize();
+	accgyro.setDLPFMode(MPU60X0_DLPF_BW_20);
     accgyro.setI2CMasterModeEnabled(0);
     accgyro.setI2CBypassEnabled(1);
     accgyro.setFullScaleGyroRange(MPU60X0_GYRO_FS_2000);
@@ -701,18 +710,19 @@ void FreeIMU::RESET_Q() {
   #elif HAS_MPU9250()
 	//initialize accelerometer and gyroscope
 	accgyro = MPU60X0(false, accgyro_addr);
-	accgyro.initialize9250();
-	accgyro.setDLPFMode(MPU60X0_DLPF_BW_20); 
-	accgyro.setI2CMasterModeEnabled(0);
-	accgyro.setI2CBypassEnabled(1);
-	accgyro.setFullScaleGyroRange(MPU60X0_GYRO_FS_2000);
-	accgyro.setFullScaleAccelRange(MPU60X0_ACCEL_FS_2);
+	//accgyro.initialize9250();
+	//accgyro.setDLPFMode(MPU60X0_DLPF_BW_20); 
+	//accgyro.setI2CMasterModeEnabled(0);
+	//accgyro.setI2CBypassEnabled(1);
+	//accgyro.setFullScaleGyroRange(MPU60X0_GYRO_FS_2000);
+	//accgyro.setFullScaleAccelRange(MPU60X0_ACCEL_FS_2);
+	accgyro.initialize9250MasterMode();
 	gyro_sensitivity = 16.4f;
 	delay(100);
 	//initialize magnetometer
-	mag = AK8963(false, AK8963_DEFAULT_ADDRESS);
-	mag.initialize();  
-	mag.setModeRes(AK8963_MODE_CONT2, MFS_16BITS);
+	//mag = AK8963(false, AK8963_DEFAULT_ADDRESS);
+	//mag.initialize();  
+	//mag.setModeRes(AK8963_MODE_CONT2, MFS_16BITS);
   #elif HAS_MPU6000()
 	accgyro = MPU60X0(true, accgyro_addr);
 	accgyro.initialize();
@@ -865,8 +875,8 @@ void FreeIMU::RESET_Q() {
   #endif
   
   #if HAS_CURIE()
-	accgyro.initialize();
-	accgyro.setFullScaleAccelRange(BMI160_ACCEL_RANGE_2G);
+	accgyro.begin();
+	accgyro.setFullScaleAccelRange(2);
 	/** Set accelerometer output data rate.
 	* The acc_odr parameter allows setting the output data rate of the accelerometer
 	* as described in the table below.
@@ -884,7 +894,7 @@ void FreeIMU::RESET_Q() {
 	* </pre>
 	*
 	*/
-	accgyro.setAccelRate(BMI160_ACCEL_RATE_100HZ);
+	accgyro.setAccelRate(200);
 
 	/** Get accelerometer digital low-pass filter mode.
 	* The acc_bwp parameter sets the accelerometer digital low pass filter configuration.
@@ -913,7 +923,7 @@ void FreeIMU::RESET_Q() {
 	*/
 	//accgyro.setAccelDLPFMode(BMI160_DLPF_MODE_OSR2);
 
-	accgyro.setFullScaleGyroRange(BMI160_GYRO_RANGE_2000);
+	accgyro.setFullScaleGyroRange(2000);
 	/** Get gyroscope output data rate.
 	* The gyr_odr parameter allows setting the output data rate of the gyroscope
 	* as described in the table below.
@@ -929,7 +939,7 @@ void FreeIMU::RESET_Q() {
 	* 13 = 3200Hz
 	* </pre>
 	*/
-	accgyro.setGyroRate(BMI160_GYRO_RATE_100HZ);
+	accgyro.setGyroRate(100);
 	  
 	/** Get gyroscope digital low-pass filter mode.
 	* The gyro_bwp parameter sets the gyroscope digital low pass filter configuration.
@@ -1036,7 +1046,7 @@ void FreeIMU::RESET_Q() {
   //ALTIMU or Adafruit 10-DOF SENSOR INIT
   #if HAS_L3D20()
     gyro.init();
-    //gyro.enableDefault();
+    gyro.enableDefault();
     //					Sensitivity
     //+/-245:        0x00	8.75	
     //+/-500:        0x10	17.5
@@ -1110,7 +1120,11 @@ void FreeIMU::RESET_Q() {
   //digitalWrite(12,HIGH);
   
   initGyros(); //}
-
+  
+  #if defined(DISABLE_MAGJAM)
+	initMagJamCal();
+  #endif
+  
   //digitalWrite(12,LOW);
 	
   #ifndef CALIBRATION_H
@@ -1187,13 +1201,13 @@ void FreeIMU::calLoad() {
 /**
  * Populates raw_values with the raw_values from the sensors
 */
-void FreeIMU::getRawValues(int * raw_values) {
+void FreeIMU::getRawValues(int16_t * raw_values) {
 	//Set raw values for Magnetometer, Press, Temp to 0 in case you are only using
 	//an accelerometer and gyro
 	//raw_values[9] will be set to MPU-6050 temp, see zeroGyro to change raw_values dimension
-	//raw_values[6] = 0;
-	//raw_values[7] = 0;
-	//raw_values[8] = 0;
+	raw_values[6] = 0;
+	raw_values[7] = 0;
+	raw_values[8] = 0;
 	//raw_values[9] = 0;
 	
   #if HAS_ITG3200()
@@ -1201,10 +1215,22 @@ void FreeIMU::getRawValues(int * raw_values) {
     gyro.readGyroRaw(&raw_values[3], &raw_values[4], &raw_values[5]);
 	gyro.readTemp(&senTemp);
 	raw_values[9] = senTemp*100;
-  #elif HAS_MPU6050() || HAS_MPU6000() || HAS_MPU9150() || HAS_MPU9250() || HAS_CURIE()
+  #elif HAS_CURIE()
+    int ax, ay, az, gx, gy, gz, mx, my, mz, rt;
+	accgyro.readMotionSensor(ax, ay, az, gx, gy, gz);
+      raw_values[0] = ax;
+      raw_values[1] = ay;
+      raw_values[2] = az;
+      raw_values[3] = gx;
+      raw_values[4] = gy;
+      raw_values[5] = gz;
+	  raw_values[9] = accgyro.readTemperature();
+  //#elif HAS_MPU6050() || HAS_MPU6000() || HAS_MPU9150() || HAS_MPU9250()
+  #elif HAS_MPU6050() || HAS_MPU6000() || HAS_MPU9150()
     #ifdef __AVR__
 	  accgyro.getMotion6(&raw_values[0], &raw_values[1], &raw_values[2], &raw_values[3], &raw_values[4], &raw_values[5]);  	  
- 	  #if HAS_MPU9150() || HAS_MPU9250()
+ 	  //#if HAS_MPU9150() || HAS_MPU9250()
+	  #if HAS_MPU9150()
 		  mag.getHeading(&raw_values[6], &raw_values[7], &raw_values[8]);			
 		  delay(10);
 		#endif
@@ -1213,7 +1239,8 @@ void FreeIMU::getRawValues(int * raw_values) {
 	 #else
       int16_t ax, ay, az, gx, gy, gz, mx, my, mz, rt;
       accgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-	  #if HAS_MPU9150() || HAS_MPU9250() 
+	  //#if HAS_MPU9150() || HAS_MPU9250() 
+	  #if HAS_MPU9150()
 		  mag.getHeading(&mx, &my, &mz);
 		  raw_values[6] = mx;
 		  raw_values[7] = my;
@@ -1229,8 +1256,23 @@ void FreeIMU::getRawValues(int * raw_values) {
       rt = accgyro.getTemperature();	  
       raw_values[9] = rt; 
     #endif
-  #endif 
+  #endif
 
+  #if HAS_MPU9250()
+    int16_t ax, ay, az, gx, gy, gz, mx, my, mz, rt;
+	accgyro.get9250Motion10Counts(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz, &rt);
+      raw_values[0] = ax;
+      raw_values[1] = ay;
+      raw_values[2] = az;
+      raw_values[3] = gx;
+      raw_values[4] = gy;
+      raw_values[5] = gz;
+      raw_values[6] = mx;
+      raw_values[7] = my;
+      raw_values[8] = mz;	  
+      raw_values[9] = rt;
+  #endif
+  
   #if HAS_HMC5883L()
     magn.getValues(&raw_values[6], &raw_values[7], &raw_values[8]);
   #endif  
@@ -1414,7 +1456,8 @@ void FreeIMU::getValues(float * values) {
 	DTemp = 9999;
   #else  // MPU6050 or other 6dof
     int16_t accgyroval[9];
-	#if HAS_MPU9150() || HAS_MPU9250()
+	//#if HAS_MPU9150() || HAS_MPU9250()
+	#if HAS_MPU9150()
 		mag.getHeading(&accgyroval[6], &accgyroval[7], &accgyroval[8]);	
 		delay(10);
 		accgyro.getMotion6(&accgyroval[0], &accgyroval[1], &accgyroval[2], 
@@ -1428,12 +1471,30 @@ void FreeIMU::getValues(float * values) {
 		values_cal[6] = mfilter_mx.filter((float) accgyroval[6]);
 		values_cal[7] = mfilter_my.filter((float) accgyroval[7]);
 		values_cal[8] = mfilter_mz.filter((float) accgyroval[8]); 
+	#elif HAS_MPU9250()
+		accgyro.get9250Motion9Counts(&accgyroval[0], &accgyroval[1], &accgyroval[2], 
+						   &accgyroval[3], &accgyroval[4], &accgyroval[5],
+						   &accgyroval[6], &accgyroval[7], &accgyroval[8]);	   
+		// read raw heading measurements from device
+		
+		accgyroval[0] = mfilter_accx.filter((float) accgyroval[0]);
+		accgyroval[1] = mfilter_accy.filter((float) accgyroval[1]);
+		accgyroval[2] = mfilter_accz.filter((float) accgyroval[2]);
+		
+		values_cal[6] = mfilter_mx.filter((float) accgyroval[6]);
+		values_cal[7] = mfilter_my.filter((float) accgyroval[7]);
+		values_cal[8] = mfilter_mz.filter((float) accgyroval[8]); 	
+	
 	#else
 		accgyro.getMotion6(&accgyroval[0], &accgyroval[1], &accgyroval[2], 
 						   &accgyroval[3], &accgyroval[4], &accgyroval[5]);
 	#endif
 	
-	DTemp = accgyro.getTemperature();
+	#if HAS_MPU9250()
+		accgyro.get9250TempCounts(&DTemp);
+	#else
+		DTemp = accgyro.getTemperature();
+	#endif
 
 	if(temp_corr_on == 1){
 		if(DTemp < temp_break){    
@@ -1513,8 +1574,8 @@ void FreeIMU::getValues(float * values) {
 */
 void FreeIMU::zeroGyro() {
   const int totSamples = nsamples;
-  int raw[11];
-  float values[11]; 
+  int16_t raw[11];
+  float values[12]; 
   float tmpOffsets[] = {0,0,0};
   
   for (int i = 0; i < totSamples; i++){
@@ -1626,13 +1687,21 @@ void FreeIMU::initGyros() {
 }
 
 
+void  FreeIMU::initMagJamCal(){
+	for(int sample_size =0; sample_size < 200; sample_size++){
+		getValues(val);
+		sqr_mag = sqr_mag + sqrt(val[6]*val[6]+val[7]*val[7]+val[8]*val[8]);
+	}
+	MagJamCal_mean = sqr_mag/200;
+}
+
 /**
  * Populates array q with a quaternion representing the IMU orientation with respect to the Earth
  * 
  * @param q the quaternion to populate
 */
 void FreeIMU::getQ(float * q, float * val) {
-  //float val[12];
+  //float val[13];
   getValues(val);
   //DEBUG_PRINT(val[3] * M_PI/180);
   //DEBUG_PRINT(val[4] * M_PI/180);
@@ -1648,10 +1717,25 @@ void FreeIMU::getQ(float * q, float * val) {
   sampleFreq = 1.0 / ((now - lastUpdate) / 1000000.0);
   lastUpdate = now;
   
+  val[12] = 0 ;
+  #if defined(DISABLE_MAGJAM)
+	sqr_mag = sqrt(val[6]*val[6]+val[7]*val[7]+val[8]*val[8]);
+	if(sqr_mag < MagJamLwrLimit*MagJamCal_mean || sqr_mag > MagJamUprLimit*MagJamCal_mean) {
+		MagJamFlag = 1;
+	} else {
+		MagJamFlag = 0;
+		getYawPitchRollRadAHRS(ypr,q);
+		old_Yaw = ypr[0]*rad2degs;
+	}
+	val[12] = MagJamFlag ;
+  #endif
+  //Serial.print(MagJamFlag); Serial.print(", ");
+  //Serial.print(MagJamCal_mean,5);Serial.print(", "); Serial.println(sqr_mag,5);
+  
   // Set up call to the appropriate filter using the axes alignment information
   // gyro values are expressed in deg/sec, the * M_PI/180 will convert it to radians/sec
-  #if(MARG == 0 || MARG == 1 || MARG == 3)
-	#if IS_9DOM() && not defined(DISABLE_MAGN)
+	/*#if(MARG == 0 || MARG == 1 || MARG == 3 && not defined(DISABLE_MAGJAM))
+	  #if IS_9DOM() && not defined(DISABLE_MAGN)
 		#if MARG == 0
 			AHRSupdate(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
 		#elif MARG == 1
@@ -1659,7 +1743,52 @@ void FreeIMU::getQ(float * q, float * val) {
 		#else
 			MARGUpdateFilter(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
 		#endif
-		val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+		val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]); */
+	#if(MARG == 0 || MARG == 1 || MARG == 3 )
+	  #if IS_9DOM() && (not defined(DISABLE_MAGN) && not defined(DISABLE_MAGJAM))
+		//Serial.println("MAGJAM Defined");
+		if(MagJamFlag == 0) {
+			#if(MARG == 0)
+				AHRSupdate(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+				val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+				old_compass_head = val[9];
+			#elif(MARG == 1)
+				MadgwickAHRSupdate(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+				val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+				old_compass_head = val[9];
+			#elif(MARG == 3)
+				MARGUpdateFilter(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+				val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+				old_compass_head = val[9];
+			#endif
+		} else if(MagJamFlag == 1) {
+			#if MARG == 0
+				AHRSupdateIMU(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2]);
+				getYawPitchRollRadAHRS(ypr,q);
+				val[9] = ypr[0]*rad2degs-old_Yaw + old_compass_head;
+			#elif MARG == 1		
+				MadgwickAHRSupdateIMU(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2]);
+				getYawPitchRollRadAHRS(ypr,q);
+				val[9] = ypr[0]*rad2degs-old_Yaw + old_compass_head;
+			#elif MARG == 3
+				MARGUpdateFilterIMU(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2]);
+				getYawPitchRollRadAHRS(ypr,q);
+				val[9] = ypr[0]*rad2degs-old_Yaw + old_compass_head;
+			#endif		
+		}
+		//val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+	#elif IS_9DOM() && (not defined(DISABLE_MAGN) && defined(DISABLE_MAGJAM))
+		//Serial.println("MAGJAM Not Defined");  
+		#if MARG == 0
+			AHRSupdate(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+			val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+			#elif MARG == 1
+			MadgwickAHRSupdate(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+			val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+			#else
+			MARGUpdateFilter(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2], val[6], val[7], val[8]);
+			val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
+		#endif
 	#else
 		#if MARG == 0
 			AHRSupdateIMU(val[3] * M_PI/180, val[4] * M_PI/180, val[5] * M_PI/180, val[0], val[1], val[2]);
@@ -1678,7 +1807,7 @@ void FreeIMU::getQ(float * q, float * val) {
 
   #endif
   
-  #if (MARG == 4 && IS_9DOM() && not defined(DISABLE_MAGN))
+  #if (MARG == 4 && IS_9DOM())
     val[9] = maghead.iheading(1, 0, 0, val[0], val[1], val[2], val[6], val[7], val[8]);
 	dcm.setSensorVals(val);
 	dcm.G_Dt = 1./ sampleFreq;
@@ -1969,7 +2098,7 @@ float FreeIMU::getEstAltitude(float * q1, float * val, float dt2) {
 */
 void FreeIMU::getEulerRad(float * angles) {
   float q[4]; // quaternion
-  float val[12];
+  float val[13];
   
   getQ(q, val);
   angles[0] = atan2(2 * q[1] * q[2] - 2 * q[0] * q[3], 2 * q[0]*q[0] + 2 * q[1] * q[1] - 1); // psi
@@ -2001,7 +2130,7 @@ void FreeIMU::getEuler360deg(float * angles) {
   float m11, m12, m21, m31, m32;
   float gx, gy, gz; // estimated gravity direction
   float q[4]; // quaternion
-  float val[12];
+  float val[13];
   
   getQ(q, val);
   
@@ -2051,7 +2180,7 @@ void FreeIMU::getEuler360degAttitude(float * angles, float * q, float * val) {
   float m11, m12, m21, m31, m32;
   float gx, gy, gz; // estimated gravity direction
   //float q[4]; // quaternion
-  //float val[12];
+  //float val[13];
   
   getQ(q, val);
   
@@ -2116,7 +2245,7 @@ void FreeIMU::getEuler360(float * angles) {
 */
 void FreeIMU::getYawPitchRollRad(float * ypr) {
   float q[4]; // quaternion
-  float val[12];
+  float val[13];
   float gx, gy, gz; // estimated gravity direction
   getQ(q, val);
   
@@ -2141,7 +2270,7 @@ void FreeIMU::getYawPitchRollRad(float * ypr) {
 */
 void FreeIMU::getYawPitchRollRadAHRS(float * ypr, float * q) {
   //float q[4]; // quaternion
-  //float val[12];
+  //float val[13];
   float gx, gy, gz; // estimated gravity direction
   //getQ(q, val);
   
@@ -2168,7 +2297,7 @@ void FreeIMU::getYawPitchRollRadAHRS(float * ypr, float * q) {
 */
 void FreeIMU::getYawPitchRoll180(float * ypr) {
 	float q[4];				// quaternion
-	float val[12];
+	float val[13];
 	float gx, gy, gz;		// estimated gravity direction
 	
 	getQ(q, val);

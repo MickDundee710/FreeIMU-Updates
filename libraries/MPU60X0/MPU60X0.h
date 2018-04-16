@@ -38,6 +38,7 @@ THE SOFTWARE.
 #define _MPU60X0_H_
 
 #include "I2Cdev.h"
+
 #if defined(__AVR__)
   #include <avr/pgmspace.h>
 #endif
@@ -83,6 +84,7 @@ THE SOFTWARE.
 #define MPU60X0_RA_CONFIG           0x1A
 #define MPU60X0_RA_GYRO_CONFIG      0x1B
 #define MPU60X0_RA_ACCEL_CONFIG     0x1C
+#define MPU9250_RA_ACCEL_CONFIG2	0x1D
 #define MPU60X0_RA_FF_THR           0x1D
 #define MPU60X0_RA_FF_DUR           0x1E
 #define MPU60X0_RA_MOT_THR          0x1F
@@ -195,7 +197,7 @@ THE SOFTWARE.
 #define MPU60X0_EXT_SYNC_ACCEL_ZOUT_L   0x7
 
 #define MPU60X0_DLPF_BW_256         0x00
-#define MPU60X0_DLPF_BW_188         0x01
+#define MPU60X0_DLPF_BW_184         0x01
 #define MPU60X0_DLPF_BW_98          0x02
 #define MPU60X0_DLPF_BW_42          0x03
 #define MPU60X0_DLPF_BW_20          0x04
@@ -420,15 +422,53 @@ THE SOFTWARE.
 #define MPU60X0_DMP_MEMORY_BANK_SIZE    256
 #define MPU60X0_DMP_MEMORY_CHUNK_SIZE   16
 
+#define I2C_SLV0_EN  	0x80
+#define I2C_SLV4_EN  	0x80
+#define I2C_READ_FLAG	0x80
+#define SEN_ENABLE  	0x00
+#define	I2C_MST_EN  	0x20
+#define I2C_MST_CLK		0x0D
+#define PWR_RESET		0x80
+		
+#define INT_DISABLE		0x00
+#define INT_PULSE_50US	0x00
+#define INT_RAW_RDY_EN	0x01
+
+enum mpu9250_dlpf_bandwidth
+{
+    DLPF_BANDWIDTH_184HZ,
+    DLPF_BANDWIDTH_92HZ,
+    DLPF_BANDWIDTH_41HZ,
+    DLPF_BANDWIDTH_20HZ,
+    DLPF_BANDWIDTH_10HZ,
+    DLPF_BANDWIDTH_5HZ
+};
+
+
 // note: DMP code memory blocks defined at end of header file
 
 class MPU60X0 {
     public:
         MPU60X0();
         MPU60X0(bool useSPI, uint8_t address);
-
+		
         void initialize();
 		void initialize9250();
+		void initialize9250MasterMode();
+		void get9250Motion9Counts(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz, int16_t* hx, int16_t* hy, int16_t* hz);
+		void get9250Motion9(float* ax, float* ay, float* az, float* gx, float* gy, float* gz, float* hx, float* hy, float* hz);
+		void get9250Motion10Counts(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz, int16_t* hx, int16_t* hy, int16_t* hz, int16_t* t);
+		void get9250AccelCounts(int16_t* ax, int16_t* ay, int16_t* az);
+		void get9250GyroCounts(int16_t* gx, int16_t* gy, int16_t* gz);
+		void get9250MagCounts(int16_t* hx, int16_t* hy, int16_t* hz);
+		void get9250TempCounts(int16_t* t);
+		int setFilt9250(mpu9250_dlpf_bandwidth bandwidth, uint8_t SRD);
+		int enableInt9250(bool enable);
+		void readAKRegisters(uint8_t subAddress, uint8_t count, uint8_t* dest);
+		bool writeAKRegister(uint8_t subAddress, uint8_t data);
+		bool writeRegister(uint8_t subAddress, uint8_t data);
+		void readRegister(uint8_t subAddress, uint8_t count, uint8_t* dest);
+		
         bool testConnection();
 
         // AUX_VDDIO register
@@ -909,12 +949,23 @@ class MPU60X0 {
             uint16_t dmpGetFIFOPacketSize();
         #endif		
 		
+		float temperature; 
+		int16_t accelerometer_data[3]; 
+		int16_t gyroscope_data[3]; 
+		int16_t magnetometer_data[3]; 
 		
+
     private:
 		bool	bSPI;
         uint8_t devAddr;
         uint8_t buffer[14];
-
+		uint8_t magDevAddr;
+		
+        // transformation matrix
+        /* transform the accel and gyro axes to match the magnetometer axes */
+        int16_t tX[3] = {0,  1,  0}; 
+        int16_t tY[3] = {1,  0,  0};
+        int16_t tZ[3] = {0,  0, 1};  //was -1  transformation is done within lib.
 };
 
 
